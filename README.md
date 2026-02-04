@@ -1,288 +1,74 @@
-# LEMA DEL PROYECTO: **RAILGUARD‑V**
+## Prólogo
 
-## 1. DESCRIPCIÓN DEL PROYECTO
+Esa noche de noviembre, mientras yacía despierta en mi cama, después de muchas vueltas en ella, algo me impulsó a encender el ordenador. Comencé a buscar un vídeo de relajación con ondas alfa para dormir, pero no sé cómo ni de qué manera, lo que encontré esa madrugada cambió algo en mi interior profundamente.
 
-**RAILGUARD‑V** es una solución embarcada de **geolocalización resiliente** para **un tren** que mantiene una estimación **continua y con integridad** de su posición sobre la vía en escenarios de **conectividad degradada** y **GNSS degradado o atacado** (jamming/spoofing).  
-
-La propuesta integra en una única arquitectura:
+En la tenue luz de mi habitación, en vez de relajarme y dormirme, mis ojos y mi mente cada vez estaban más despiertos. Lo que llegó “casualmente” esa madrugada a mis manos era un documental cuyo título era algo así como **“Desmontando el virus del SIDA”** —tristemente, poco después el vídeo fue censurado y desapareció de YouTube—.
 
-1) **GNSS con detección de jamming/spoofing** y evaluación de integridad (solo se usa cuando es consistente).  
-2) **Localización visual** con **cámara frontal** + **mapa visual ligero offline**, sin dependencia de red.  
-3) **Odometría disponible** (distancia/velocidad por eje), usada como columna vertebral en GNSS‑denied (túneles) y como referencia dinámica para detectar GNSS anómalo.  
-4) **Posicionamiento colaborativo tren–tren (V2V)** con intercambio mínimo, tolerante a cortes y fusión conservadora.
+A medida que las historias de los pacientes se desarrollaban frente a mí y los testimonios de los doctores —que daban diferentes puntos de vista junto a sus pruebas científicas—, sentí que mi corazón se aceleraba. Eran relatos de lucha, de estigma, de condena, de ir contra corriente, pero también de transformación, de esperanza y, sobre todo, de humanidad. Algo dentro de mí se agitó y me conmovió intensamente.
 
-**Salida principal** (para explotación/operación y analítica):
-- Posición “sobre vía”: **coordenada curvilínea** $$s$$ (equivalente a PK/distance‑along‑track) + **identificador de rama/vía** (track ID) en zonas con varias vías.
-- Velocidad longitudinal $$\dot{s}$$.
-- **Incertidumbre** (intervalos 95% y/o covarianza).
-- Estado GNSS (OK/degradado/jamming sospechado/spoofing sospechado) y registro de evidencias.
-
----
+Durante las semanas siguientes, no podía dejar de pensar en ese documental y en aquellas vidas de personas que decían sentirse muertos en vida pese a la medicación.
 
-## 2. CONTEXTO FERROVIARIO (PARA INGENIEROS NO FERROVIARIOS)
+¿Cómo era realmente vivir con una enfermedad tan denostada e incomprendida por la sociedad? ¿Qué retos enfrentaban estas personas día a día? ¿Cuántas personas a mi alcance podrían estar viviendo en silencio esta “condena”? ¿Por qué algunas personas lo desarrollaban y otras no, exponiéndose igualmente al “virus”?
 
-Un tren está **confinado** a una red de vías (topología tipo grafo). Esto permite estimar posición en coordenadas sobre la infraestructura:
+Todas esas preguntas daban vueltas en mi cabeza sin parar. Mi mente inquieta y mi ansia de respuestas me hizo buscar más información, leer varios libros y ver muchos vídeos sobre el tema.
 
-- $$s$$: distancia acumulada sobre el eje de la vía (1D sobre una rama).
-- $$k$$: rama/vía activa (discreto) especialmente en estaciones, apartaderos y bifurcaciones.
+Lo que había comprendido me impulsó a comentarlo con gran parte de mi círculo de amigos y familia, y con algunos de mis alumnos. Sentía la necesidad imperiosa de hacer conscientes a otros.
 
-En entornos como túneles o estaciones cubiertas, el **GNSS** puede:
-- perderse (insuficientes satélites), o
-- parecer “bueno” pero ser falso (spoofing), o
-- volverse ruidoso (jamming).
+Y así pasaron algunas semanas más, hasta que ocurrió algo que confirmó que todo lo anterior no fue una simple “casualidad”, sino una bonita **CAUSAlidad**.
 
-La **odometría** ferroviaria (por ejes) aporta continuidad en esos tramos, pero:
-- puede degradarse con patinaje/deslizamiento (especialmente en aceleración/frenado y condiciones adversas),
-- requiere calibración (diámetro efectivo rueda, etc.).
+> “Llamamos ‘casualidad’ a la causa ignorada de un efecto desconocido”.  
+> —Voltaire
 
-La visión frontal aporta “anclas” adicionales al reconocer elementos del entorno. Y el V2V permite que trenes con buena estimación ayuden a otros cuando hay ventanas de comunicación.
-
----
-
-## 3. ARQUITECTURA COMPLETA (EMBARCADA + MAPAS + V2V)
-
-### 3.1 Diagrama lógico (texto)
-**Sensores → Extracción de evidencias → Fusión con integridad → Salidas + logging**
-- GNSS → métricas GNSS + posición/velocidad
-- Odometría → $$\Delta s$$, $$\dot{s}$$
-- Cámara frontal → landmarks + calidad; (opcional) odometría visual
-- V2V → estimaciones de otros trenes + incertidumbre + eventos
-
-Todo converge en un **Motor de Fusión** con:
-- **Map‑matching** a red ferroviaria (geometría/topología),
-- **gestión de incertidumbre** y rechazo de outliers,
-- **detección de GNSS anómalo** (jamming/spoofing),
-- **fusión conservadora** de V2V (evitar sobreconfianza).
-
-### 3.2 Componentes embarcados (tren piloto)
-**Entradas**
-- GNSS multi‑constelación (integración con receptor existente).
-- **Odometría disponible** (señal de velocidad/distancia; resolución y frecuencia según tren).
-- Cámara frontal (1080p; WDR deseable).
-- (Recomendable) IMU compacta: mejora dinámica e integridad, pero el diseño base se apoya en odometría+visión.
-
-**Módulos**
-1. **GIM – GNSS Integrity Monitor**  
-2. **VLM – Visual Localization Module** (landmarks + asociación a mapa)  
-3. **ODM – Odometer Monitor** (calidad, detección de patinaje/deslizamiento)  
-4. **CMM – Cooperative Messaging Module (V2V)**  
-5. **FUS – Fusion Engine** (estimación $$s,k,\dot{s}$$ con incertidumbre)  
-6. **Logger / Replay** para validación y mejora iterativa.
-
-### 3.3 Mapas (offline, ligeros)
-- **Mapa geométrico de vía**: ejes, PK, topología (bifurcaciones), “corredor” de tolerancia.  
-- **Mapa visual ligero**: conjunto de landmarks por tramo (con descriptores compactos y PK aproximada).  
-  - Se descarga/actualiza cuando hay conectividad, pero **opera 100% offline**.
+Durante uno de los retiros intensivos presenciales que organicé de **Fórmula Secuoya**, junto a un grupo selecto de 27 mentes inquietas, allí estaba ella.
 
----
+Desde el primer momento que la vi allí, en mitad de la naturaleza entre montañas, con su pelo cortado al uno, sus grandes y expresivos ojos y su genuina sonrisa, supe que estaba frente a una mujer excepcional, aun sin mediar palabra entre nosotras.
 
-## 4. FUENTES DE DATOS Y OBSERVACIONES (DETALLE)
+El último día de ese retiro, con una voz pausada pero con una determinación inquebrantable, ella comenzó a compartir su experiencia desde que, hacía 12 años, los médicos le habían dicho que, probablemente, le quedaba poco tiempo de vida. Fue el momento en que le diagnosticaron que era VIH positivo.
 
-### 4.1 GNSS (posición/velocidad + calidad)
-**Observación**: $$z_{gnss} = (x,y,v,\dots)$$ + indicadores (C/N0, DOP, #sat, flags).  
-**Uso**: ancla cuando supera tests de integridad; si no, se descarta o se de‑pondera.
+A medida que sus palabras y emoción fluían, pude sentir cómo los corazones de todos los presentes se unían a su relato. Ya no eran solo historias ajenas, sino una realidad que nos tocaba a todos de una forma mucho más personal.
 
-### 4.2 Odometría (disponible)
-**Observación**:
-- incremento longitudinal $$\Delta s_{odo}$$ y/o velocidad $$\dot{s}_{odo}$$ a alta frecuencia.
+Vimos reflejados en su historia el miedo, la incertidumbre y el dolor, pero también la fuerza, la resiliencia y la esperanza que la habían acompañado a lo largo de su viaje, así como su gran madurez pese a su juventud.
 
-**Monitor de calidad (ODM)**
-- Detecta intervalos de posible patinaje/deslizamiento mediante:
-  - inconsistencias con visión (cuando hay),
-  - dinámica longitudinal (cambios bruscos improbables),
-  - reglas ferroviarias (aceleración típica máxima, etc., parametrizable).
-- Ajusta el modelo de ruido de la odometría (covarianza) en el filtro.
+Mientras la escuchaba atentamente, sentí que comenzaban a encajar las piezas que me habían inquietado desde esa madrugada en la que vi ese documental. Lo compartí con ella y conectamos de corazón a corazón.
 
-**Rol en GNSS‑denied**
-- Es la fuente principal de “propagación” del estado $$s$$ en túneles.
-- Se corrige periódicamente por visión y por re‑anclajes GNSS válidos.
+Después nos abrazamos. Fue uno de esos abrazos de verdad, de esos abrazos que te recomponen o incluso reinician. Y fue como si todo empezara a cobrar sentido: el momento en el que almas afines se encuentran, se alinean y se re-conectan.
 
-### 4.3 Visión: landmarks + (opcional) odometría visual
-**Landmarking (principal)**
-- Detecta y describe hitos: señales, pórticos, postes, entradas de túnel, estructuras singulares.
-- Hace asociación al mapa visual con “gating” por:
-  - hipótesis de tramo $$s$$ (del filtro),
-  - secuencia temporal (no solo detección aislada),
-  - plausibilidad topológica (rama/vía).
-
-**Odómetro visual (opcional)**
-- Estima movimiento relativo; ayuda cuando hay pocos landmarks, pero su calidad depende de textura/iluminación.
-
-### 4.4 V2V (colaboración con mensajes mínimos)
-**Mensaje mínimo**
-- timestamp, $$\hat{s}$$, $$\hat{k}$$, $$\dot{\hat{s}}$$
-- incertidumbre (covarianza comprimida o intervalos)
-- eventos (opcional): spoofing sospechado, paso por landmark fuerte.
-
-**Tolerancia a cortes**
-- Envío oportunista + almacenamiento local.
-- La fusión trata mensajes retrasados con incertidumbre inflada.
-
----
-
-## 5. ALGORITMO (FILTRO) Y GESTIÓN DE INCERTIDUMBRE
-
-### 5.1 Estado y representación
-- Estado continuo: $$\mathbf{x} = (s, \dot{s}, b_{odo})$$  
-  donde $$b_{odo}$$ representa sesgo/escala (calibración efectiva de odometría) estimable online.  
-- Estado discreto: $$k$$ (rama/vía). Se mantiene como multi‑hipótesis cuando hay ambigüedad.
-
-### 5.2 Propagación (predicción)
-En cada paso:
-- $$s_{t+1} = s_t + (\Delta s_{odo} \cdot \alpha) + w_s$$  
-- $$\dot{s}_{t+1} = \dot{s}_{odo} + w_v$$  
-- $$\alpha$$ (o $$b_{odo}$$) se ajusta lentamente para capturar variaciones (diámetro efectivo, etc.).  
-El ruido $$w_s, w_v$$ se hace **adaptativo** según el monitor ODM (más incertidumbre si patinaje probable).
-
-### 5.3 Actualización con observaciones (correcciones)
-- **GNSS**: se proyecta a la red ferroviaria (map‑matching) y corrige $$s,k$$ si pasa integridad.  
-- **Visión (landmarks)**: cada match aporta una observación de $$s$$ (y a veces de $$k$$) con covarianza basada en calidad.  
-- **V2V**: se combina estimación externa con **fusión conservadora**.
+Ella, como habrás imaginado, es **Yuliana**. Y es la autora de esta maravillosa obra que tienes en tus manos o en tu pantalla.
 
-### 5.4 Detección de jamming/spoofing (GIM)
-Se ejecutan tests combinados:
-
-**Indicadores de jamming**
-- caída sostenida de C/N0, pérdida de satélites, DOP alto, aumento de varianza.
-
-**Indicadores de spoofing**
-- GNSS consistente internamente pero **inconsistente** con:
-  - odometría (saltos de $$s$$ no explicables por $$\Delta s_{odo}$$),
-  - visión (landmarks incompatibles),
-  - mapa (fuera del corredor, cambio de vía imposible).
-- análisis temporal (saltos abruptos o “teleport”).
-
-**Decisión**
-- Modo GNSS‑OK: GNSS entra con su covarianza nominal.
-- Modo GNSS‑degradado/jamming: GNSS entra con covarianza inflada o se ignora.
-- Modo spoofing sospechado: GNSS se **rechaza**; se registra evento; navegación continúa con odometría+visión (+V2V).
-
-### 5.5 Fusión V2V (conservadora)
-Para evitar sobreconfianza (correlaciones desconocidas), se aplica **Covariance Intersection (CI)** o equivalente:
-- combina $$\hat{s}$$ y covarianzas sin suponer independencia,
-- garantiza que la incertidumbre resultante no sea artificialmente baja.
-
----
-
-## 6. TRL OBJETIVO
-
-**TRL objetivo del piloto**: **TRL 6**  
-Prototipo integrado (GNSS‑integridad + odometría + visión + V2V) validado en entorno relevante Renfe, con métricas cuantitativas de precisión, continuidad e integridad.
-
-**Evolución esperada**
-- Tras piloto y endurecimiento (industrialización, monitorización, procesos de actualización de mapa): TRL 7.
-
----
-
-## 7. PILOTO EN RENFE (1 TREN): ALCANCE, HITOS, MÉTRICAS
-
-### 7.1 Alcance
-- Instalación en **un tren** (unidad piloto) usando **odometría existente** + cámara frontal + GNSS.
-- Selección de 1–2 corredores con:
-  - túneles (GNSS‑denied),
-  - estaciones complejas (multi‑vía),
-  - urbano (multipath) y zonas abiertas (baseline).
-
-**Nota de validación**: para medir precisión se requiere una “verdad terreno” durante pruebas (p. ej. solución de referencia temporal, mediciones puntuales o dataset de comparación). Se define conjuntamente en el arranque.
-
-### 7.2 Hitos (orientativo, ajustable a calendario de Renfe)
-**H0 – Definición (Semanas 1–2)**
-- Línea(s) piloto, permisos, inventario de señales de odometría y GNSS, montaje cámara.
-- Criterios de éxito y plan de seguridad/ciberseguridad de pruebas.
-
-**H1 – Integración base (Semanas 3–7)**
-- Integración odometría + motor de fusión $$s,k$$ con mapa geométrico.
-- Integridad GNSS (detección jamming/spoofing) integrada en el filtro.
-- Primeras pruebas con GNSS nominal.
-
-**H2 – Mapa visual + visión (Semanas 6–10, paralelo)**
-- Captura de pasadas para construir mapa visual ligero.
-- Integración VLM (landmarks) y validación de tasas de matching.
-
-**H3 – V2V mínimo (Semanas 9–12)**
-- Definición de mensaje mínimo, almacenamiento y reenvío.
-- Ensayos con conectividad intermitente (simulada si es necesario).
-
-**H4 – Campaña de pruebas (Semanas 13–20)**
-- Pruebas diurnas/nocturnas, distintas velocidades.
-- Evaluación en túneles (GNSS‑denied), urbano, estaciones.
-- Informe final + plan de escalado.
-
-### 7.3 Métricas (propuestas)
-**Precisión longitudinal sobre vía**
-- $$P95$$ y $$P99$$ del error en $$s$$ (m).
-- Error máximo sostenido en túnel (m) vs longitud de túnel.
-
-**Continuidad**
-- % del trayecto con solución válida (sin dropouts).
-- Tiempo máximo sin GNSS manteniendo $$P95$$ < umbral acordado.
-
-**Integridad GNSS**
-- Tasa de detección (TPR) de anomalías y falsa alarma (FPR).
-- Tiempo de detección ante spoofing/jamming (TTD, s).
-- Tasa de “rechazo correcto” de GNSS falso sin degradar navegación.
-
-**Contribución de visión**
-- nº de re‑anclajes por km y su calidad.
-- reducción del error acumulado en GNSS‑denied respecto a “solo odometría”.
-
-**Contribución V2V**
-- mejora (conservadora) de incertidumbre/precisión cuando hay intercambio.
-- robustez a latencia: rendimiento con mensajes retrasados.
-
-**Operación**
-- coste de mantenimiento del mapa visual (frecuencia de actualización por km/mes).
-- carga computacional embarcada (CPU/GPU, W) y memoria.
-
----
-
-## 8. RIESGOS Y MITIGACIONES (ENFOQUE CON ODOMETRÍA)
-
-### R1) Error de odometría por patinaje/deslizamiento
-**Riesgo**: en frenado fuerte o baja adherencia, $$\Delta s_{odo}$$ puede sesgarse.  
-**Mitigación**
-- Monitor ODM para detectar intervalos de baja confianza y aumentar covarianza.
-- Ajuste online de $$b_{odo}$$ (escala/sesgo).
-- Uso de visión como ancla frecuente en zonas con landmarks; GNSS cuando sea íntegro.
-
-### R2) Variabilidad visual (noche/lluvia/suciedad)
-**Mitigación**
-- Cámara WDR/HDR + procedimientos de limpieza/inspección en piloto.
-- Control de calidad visual: si baja, no “forzar” matches; aumentar incertidumbre.
-
-### R3) Ambigüedad multi‑vía
-**Mitigación**
-- Estado discreto multi‑hipótesis $$k$$ con poda por probabilidad.
-- Secuencias de landmarks y restricciones topológicas para desambiguar.
-
-### R4) Spoofing “sofisticado” (sin saltos evidentes)
-**Mitigación**
-- Tests cruzados GNSS vs odometría+visión+mapa.
-- Modelos de consistencia temporal y dinámica (no solo umbrales simples).
-- Registro de evidencias para mejora iterativa y análisis forense.
-
-### R5) Dependencia de V2V
-**Mitigación**
-- V2V es incremental: el sistema cumple requisitos sin él.
-- Mensajes mínimos, store‑and‑forward, fusión CI.
-
-### R6) Mantenimiento del mapa visual
-**Mitigación**
-- Mapa ligero versionado con caducidad.
-- Detección de “mapa envejecido” (caída de matching) y remapeo localizado.
-
----
-
-## 9. VALOR PARA RENFE (RESULTADOS ESPERADOS)
-
-- Continuidad en túneles y zonas GNSS difíciles gracias a **odometría + visión**.
-- Mayor ciberresiliencia: **detección y mitigación** de GNSS jamming/spoofing.
-- Estimación con **incertidumbre cuantificada** para integrar en sistemas operativos.
-- Capa V2V que mejora resiliencia sin exigir conectividad continua.
-- Arquitectura replicable a otros trenes y líneas con coste contenido (mapa visual ligero).
-
----
-
-## 10. RESUMEN EJECUTIVO (PARA CIERRE DE PÁGINA)
-
-RAILGUARD‑V integra GNSS con monitor de integridad (jamming/spoofing), odometría ferroviaria disponible, localización visual con cámara frontal y mapa visual ligero offline, y colaboración V2V con mensajes mínimos. Mediante un filtro híbrido (estado continuo $$s,\dot{s}$$ + selección discreta de vía) y gestión adaptativa de incertidumbre, proporciona una posición sobre vía continua, robusta y trazable. El piloto en un tren de Renfe busca alcanzar TRL 6 con métricas objetivas de precisión, continuidad e integridad en escenarios reales (túneles, urbano y estaciones complejas), incluyendo un plan de mitigación de riesgos centrado en odometría y condiciones visuales adversas.
+La capacidad que tiene Yul para iluminar una habitación con una sola sonrisa es solo una de las muchas cualidades que la hacen única. Pero su verdadera fortaleza no reside en su encanto natural o en su optimismo contagioso, sino en su honestidad, su coraje y su valentía inquebrantable.
+
+**“Se Vale Vivir”** es más que una autobiografía: es el testimonio de una guerrera que se enfrenta a uno de los desafíos más importantes de la vida y a una edad muy temprana. Con una franqueza desarmante, Yul nos abre las puertas de su mundo y nos invita a caminar junto a ella a través de una travesía cargada de miedos, dudas, pero sobre todo de aceptación, de amor y de esperanza.
+
+Este libro no es solamente sobre el VIH. Es sobre el poder de la autocompasión y la aceptación, de aprender a dejar ir, de vivir el presente, de la importancia de contrastar información y no dejarse llevar por la opinión de la mayoría, y la fuerza de mantener siempre una mente abierta y empática.
+
+Esta obra no es solo su historia. En gran parte es un libro de desarrollo personal y espiritual en el que verás, de forma práctica y real, el poder de transformar una noticia desoladora en una oportunidad para redescubrirse, reconectarse y reivindicar la vida bajo sus propios términos, teniendo como lema que **“se vale vivir”**. Cada resumen de cada capítulo es una pequeña joya para pensar, meditar y trabajar interiormente.
+
+Podría destacar cientos de frases, pero voy a destacar dos a continuación de las enseñanzas de Yul que personalmente más han tocado mi alma.
+
+Yul dice que uno de los mayores aprendizajes vividos:
+
+> “fue vivir la vida como si estuviera siendo filmada constantemente, y si en cualquier momento se tuviera que mostrar dicha película, existiera la tranquilidad de estarla viviendo en coherencia e integridad”.
+
+En otro pasaje escribe:
+
+> “Con el tiempo entendí que cada día moría a una versión de mí, que la metáfora era real, que en cada instante somos versiones diferentes de nosotros mismos y que no tenía nada que esperar, que la muerte caminaba junto a mí, que hacía parte de vivir y me entregaba la posibilidad de nacer nuevamente, así mismo me daba en cada amanecer una nueva oportunidad y con ella, una nueva realidad que solo podía disfrutar y dimensionar si ahora la veía con los ojos que habían transformado al integrar lo que hubiera podido descubrir y sanar”.
+
+Y así, de una manera entretenida y totalmente transparente, nos comparte cómo, en medio de la tormenta, encontró su propósito vital, convirtiendo su experiencia en un faro de luz para otros que navegan por aguas similares: para sus familiares, para sus amigos, y para otros que, con mente abierta, desean comprender y apoyar.
+
+Yul nos recuerda de una forma extremadamente amorosa que, independientemente de las circunstancias, todos tenemos el poder de elegir cómo enfrentarnos a la adversidad. Con cada capítulo, nos muestra la belleza de la vulnerabilidad y la fortaleza que surge cuando nos permitimos reconectar y ser auténticamente nosotros mismos.
+
+**“Se vale vivir”** no es solo el viaje de Yul. Es una invitación para que cada uno de nosotros reflexionemos sobre nuestras propias luchas y descubramos el coraje y poder interior que todos llevamos dentro.
+
+Prepárate emocionalmente para ser conmovido, inspirado y, sobre todo, transformado por la historia de una mujer extraordinaria que decidió no ser definida por un diagnóstico, sino por su indomable espíritu de lucha y sus insaciables ganas de vivir.
+
+Marcel Proust escribió: “El verdadero viaje de descubrimiento no consiste en buscar nuevos paisajes, sino en mirar con ojos nuevos”.
+
+Así que adelante: abre este libro y comienza una travesía que, estoy segura, cambiará tu perspectiva y te tocará el corazón para siempre, tanto como Yul lo ha hecho conmigo.
+
+Con cariño, te deseo un feliz viaje de descubrimiento a través de las siguientes páginas,
+
+**Susana Rodríguez**  
+formulasecuoya.com  
+info@susanarodriguez.net
+
+**P.D.** Te voy a pedir un pequeño favor. Si este libro te conmueve de cualquier forma, habla o escribe sobre él, compártelo en redes sociales o regálaselo a otras personas. Porque cada uno de nosotros siempre podemos hacer una diferencia positiva en la vida de otros. ¿No crees?
