@@ -1,4 +1,3 @@
-````markdown
 ## Prólogo
 
 Esa noche de noviembre, mientras yacía despierta en mi cama, después de muchas vueltas en ella, algo me impulsó a encender el ordenador. Comencé a buscar un vídeo de relajación con ondas alfa para dormir, pero no sé cómo ni de qué manera, lo que encontré esa madrugada cambió algo en mi interior profundamente.
